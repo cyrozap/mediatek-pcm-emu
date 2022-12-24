@@ -1,0 +1,9 @@
+[package]
+name = "mtk-pcm-emu"
+version = "0.1.0"
+authors = ["cyrozap"]
+license = "GPL-3.0+"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0.32", features = ["derive"] }
