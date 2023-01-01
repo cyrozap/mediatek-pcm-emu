@@ -266,8 +266,8 @@ impl Core {
         };
 
         let rd_val = match instr.inv {
-            true => rs_val - value,
-            false => rs_val + value,
+            true => rs_val.wrapping_sub(value),
+            false => rs_val.wrapping_add(value),
         };
 
         self.reg_write(rd, rd_val);
