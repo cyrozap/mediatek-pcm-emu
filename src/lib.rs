@@ -240,10 +240,7 @@ impl Core {
 
     fn fetch_im_word(&mut self) -> u32 {
         let addr = (self.ip as usize) * 4;
-        let word = ((self.im[addr + 3] as u32) << 24)
-            | ((self.im[addr + 2] as u32) << 16)
-            | ((self.im[addr + 1] as u32) << 8)
-            | (self.im[addr + 0] as u32);
+        let word = u32::from_le_bytes(self.im[addr..addr + 4].try_into().unwrap());
         self.ip += 1;
         word
     }
