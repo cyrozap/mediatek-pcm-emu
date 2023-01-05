@@ -51,34 +51,56 @@ pub enum ExitReason {
 
 #[derive(Debug)]
 pub struct Instruction {
-    op3128: u8,
-    op2727: bool,
-    rd: u8,
-    inv: bool,
-    shl: bool,
-    sh: u8,
-    rxryrs: u16,
-    rxry: u16,
-    rx: u8,
-    ry: u8,
-    rs: u8,
+    word: u32,
 }
 
 impl Instruction {
-    fn from_u32(v: u32) -> Self {
-        Self {
-            op3128: (v >> 28) as u8,
-            op2727: ((v >> 27) & 1) != 0,
-            rd: ((v >> 22) & 0x1F) as u8,
-            inv: ((v >> 21) & 1) != 0,
-            shl: ((v >> 20) & 1) != 0,
-            sh: ((v >> 15) & 0x1F) as u8,
-            rxryrs: (v & 0x7FFF) as u16,
-            rxry: ((v >> 5) & 0x3FF) as u16,
-            rx: ((v >> 10) & 0x1F) as u8,
-            ry: ((v >> 5) & 0x1F) as u8,
-            rs: (v & 0x1F) as u8,
-        }
+    fn from_u32(word: u32) -> Self {
+        Self { word }
+    }
+
+    fn get_op3128(&self) -> u8 {
+        (self.word >> 28) as u8
+    }
+
+    fn get_op2727(&self) -> bool {
+        ((self.word >> 27) & 1) != 0
+    }
+
+    fn get_rd(&self) -> u8 {
+        ((self.word >> 22) & 0x1F) as u8
+    }
+
+    fn get_inv(&self) -> bool {
+        ((self.word >> 21) & 1) != 0
+    }
+
+    fn get_shl(&self) -> bool {
+        ((self.word >> 20) & 1) != 0
+    }
+
+    fn get_sh(&self) -> u8 {
+        ((self.word >> 15) & 0x1F) as u8
+    }
+
+    fn get_rxryrs(&self) -> u16 {
+        (self.word & 0x7FFF) as u16
+    }
+
+    fn get_rxry(&self) -> u16 {
+        ((self.word >> 5) & 0x3FF) as u16
+    }
+
+    fn get_rx(&self) -> u8 {
+        ((self.word >> 10) & 0x1F) as u8
+    }
+
+    fn get_ry(&self) -> u8 {
+        ((self.word >> 5) & 0x1F) as u8
+    }
+
+    fn get_rs(&self) -> u8 {
+        (self.word & 0x1F) as u8
     }
 }
 
@@ -250,19 +272,19 @@ impl Core {
     }
 
     fn exec_add_sub_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
-        let rd_val = match instr.inv {
+        let rd_val = match instr.get_inv() {
             true => rs_val.wrapping_sub(value),
             false => rs_val.wrapping_add(value),
         };
@@ -274,7 +296,7 @@ impl Core {
 
     fn exec_add_sub_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
         let imm32 = self.fetch_im_word();
-        let imm_val = match instr.shl {
+        let imm_val = match instr.get_shl() {
             true => match self.mem_read(imm32) {
                 Ok(v) => v,
                 Err(e) => return Some(e),
@@ -286,23 +308,23 @@ impl Core {
     }
 
     fn exec_add_sub_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.rx) {
+        let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rx_val = self.reg_read(rx);
 
-        let shifted = match instr.shl {
-            true => rx_val << instr.sh,
-            false => rx_val >> instr.sh,
+        let shifted = match instr.get_shl() {
+            true => rx_val << instr.get_sh(),
+            false => rx_val >> instr.get_sh(),
         };
 
         self.exec_add_sub_common(instr, shifted)
     }
 
     fn exec_add_sub(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_add_sub_reg_imm32(instr),
             false => self.exec_add_sub_regs(instr),
         }
@@ -311,24 +333,24 @@ impl Core {
     fn exec_compare_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
         let signed_val = value as i32;
 
-        let negated = match instr.inv {
+        let negated = match instr.get_inv() {
             true => signed_val,
             false => -signed_val,
         };
 
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs) as i32;
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
-        let result = match instr.op3128 {
+        let result = match instr.get_op3128() {
             0x2 => rs_val > negated,
             0x3 => rs_val >= negated,
             0x4 => rs_val < negated,
@@ -350,7 +372,7 @@ impl Core {
 
     fn exec_compare_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
         let imm32 = self.fetch_im_word();
-        let imm_val = match instr.shl {
+        let imm_val = match instr.get_shl() {
             true => match self.mem_read(imm32) {
                 Ok(v) => v,
                 Err(e) => return Some(e),
@@ -362,47 +384,47 @@ impl Core {
     }
 
     fn exec_compare_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.rx) {
+        let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rx_val = self.reg_read(rx);
 
-        let shifted = match instr.shl {
-            true => rx_val << instr.sh,
-            false => rx_val >> instr.sh,
+        let shifted = match instr.get_shl() {
+            true => rx_val << instr.get_sh(),
+            false => rx_val >> instr.get_sh(),
         };
 
         self.exec_compare_common(instr, shifted)
     }
 
     fn exec_compare(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_compare_reg_imm32(instr),
             false => self.exec_compare_regs(instr),
         }
     }
 
     fn exec_and_or_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
-        let inverted = match instr.inv {
+        let inverted = match instr.get_inv() {
             true => !value,
             false => value,
         };
 
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
-        let rd_val = match instr.op3128 {
+        let rd_val = match instr.get_op3128() {
             0x8 => rs_val & inverted,
             0xa => rs_val | inverted,
             _ => panic!("We should never get here."),
@@ -415,7 +437,7 @@ impl Core {
 
     fn exec_and_or_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
         let imm32 = self.fetch_im_word();
-        let imm_val = match instr.shl {
+        let imm_val = match instr.get_shl() {
             true => match self.mem_read(imm32) {
                 Ok(v) => v,
                 Err(e) => return Some(e),
@@ -427,23 +449,23 @@ impl Core {
     }
 
     fn exec_and_or_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.rx) {
+        let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rx_val = self.reg_read(rx);
 
-        let shifted = match instr.shl {
-            true => rx_val << instr.sh,
-            false => rx_val >> instr.sh,
+        let shifted = match instr.get_shl() {
+            true => rx_val << instr.get_sh(),
+            false => rx_val >> instr.get_sh(),
         };
 
         self.exec_and_or_common(instr, shifted)
     }
 
     fn exec_and_or(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_and_or_reg_imm32(instr),
             false => self.exec_and_or_regs(instr),
         }
@@ -455,19 +477,19 @@ impl Core {
         and_value: u32,
         or_value: u32,
     ) -> Option<ExitReason> {
-        let inverted = match instr.inv {
+        let inverted = match instr.get_inv() {
             true => !and_value,
             false => and_value,
         };
 
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
@@ -484,7 +506,7 @@ impl Core {
         let or_imm32 = self.fetch_im_word();
 
         // FIXME: This will loop forever if shl is set.
-        let and_val = match instr.shl {
+        let and_val = match instr.get_shl() {
             true => match self.mem_read(and_imm32) {
                 Ok(v) => v,
                 Err(e) => return Some(e),
@@ -492,7 +514,7 @@ impl Core {
             false => and_imm32,
         };
 
-        let or_val = match instr.shl {
+        let or_val = match instr.get_shl() {
             true => match self.mem_read(or_imm32) {
                 Ok(v) => v,
                 Err(e) => return Some(e),
@@ -504,19 +526,19 @@ impl Core {
     }
 
     fn exec_anor_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.rx) {
+        let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rx_val = self.reg_read(rx);
 
-        let rx_val_shifted = match instr.shl {
-            true => rx_val << instr.sh,
-            false => rx_val >> instr.sh,
+        let rx_val_shifted = match instr.get_shl() {
+            true => rx_val << instr.get_sh(),
+            false => rx_val >> instr.get_sh(),
         };
 
-        let ry = match get_register_for_index(instr.ry) {
+        let ry = match get_register_for_index(instr.get_ry()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
@@ -527,36 +549,36 @@ impl Core {
     }
 
     fn exec_anor(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_anor_reg_imm32(instr),
             false => self.exec_anor_regs(instr),
         }
     }
 
     fn exec_jump_call_uncond(&mut self, instr: Instruction) -> Option<ExitReason> {
-        if instr.op3128 == 0xc {
+        if instr.get_op3128() == 0xc {
             if self.in_call {
                 // TODO: Confirm how this works on real hardware.
                 panic!("Tried executing a call within a call");
             }
             self.next_in_call = true;
-            self.next_r11 = instr.rd as u32;
+            self.next_r11 = instr.get_rd() as u32;
             self.link_register = self.ip + 1;
         }
-        self.next_ip = Some(((instr.sh as u16) << 10) | instr.rxry);
+        self.next_ip = Some(((instr.get_sh() as u16) << 10) | instr.get_rxry());
         self.delay_count = 2;
         None
     }
 
     fn exec_jump_call_cond(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let do_jump = match instr.inv {
+        let do_jump = match instr.get_inv() {
             true => rs_val == 0,
             false => rs_val != 0,
         };
@@ -568,14 +590,14 @@ impl Core {
     }
 
     fn exec_jump_call(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_jump_call_cond(instr),
             false => self.exec_jump_call_uncond(instr),
         }
     }
 
     fn exec_store_multi_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let word_count = instr.sh as u32;
+        let word_count = instr.get_sh() as u32;
 
         if word_count < 1 {
             return Some(ExitReason::Invalid(instr));
@@ -602,20 +624,20 @@ impl Core {
     }
 
     fn exec_store_multi(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.inv {
+        match instr.get_inv() {
             true => self.exec_store_multi_imm32(instr),
             false => Some(ExitReason::Invalid(instr)), // TODO
         }
     }
 
     fn exec_store_imm16(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let high_bit: u32 = match instr.shl {
+        let high_bit: u32 = match instr.get_shl() {
             true => 1 << 15,
             false => 0,
         };
-        let value = high_bit | instr.rxryrs as u32;
+        let value = high_bit | instr.get_rxryrs() as u32;
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
@@ -626,14 +648,14 @@ impl Core {
     }
 
     fn exec_store_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.rs) {
+        let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.rd) {
+        let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(instr)),
         };
@@ -644,14 +666,14 @@ impl Core {
     }
 
     fn exec_store_single(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.inv {
+        match instr.get_inv() {
             true => self.exec_store_imm16(instr),
             false => self.exec_store_regs(instr),
         }
     }
 
     fn exec_store(&mut self, instr: Instruction) -> Option<ExitReason> {
-        match instr.op2727 {
+        match instr.get_op2727() {
             true => self.exec_store_multi(instr),
             false => self.exec_store_single(instr),
         }
@@ -680,7 +702,7 @@ impl Core {
         // }
         let saved_ip = self.ip;
         let instr = self.fetch_instruction();
-        let res = match instr.op3128 {
+        let res = match instr.get_op3128() {
             0x0 => self.exec_add_sub(instr),
             0x1 => self.exec_add_sub(instr),
             0x2..=0x7 => self.exec_compare(instr),
