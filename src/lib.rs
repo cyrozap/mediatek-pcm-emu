@@ -154,8 +154,8 @@ pub struct Core {
     link_register: u16,
     in_call: bool,
     regfile: [u32; 16],
-    pub reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-    pub reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
+    reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
+    reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     pub im: [u8; 1 << 15],
     pub memory_value: Option<u32>,
     delay_count: u8,
@@ -167,14 +167,19 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn new(ip: u16, im: [u8; 1 << 15]) -> Self {
+    pub fn new(
+        ip: u16,
+        im: [u8; 1 << 15],
+        reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
+        reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
+    ) -> Self {
         Self {
             ip,
             link_register: 0,
             in_call: false,
             regfile: [0; 16],
-            reg_read_filter: None,
-            reg_write_filter: None,
+            reg_read_filter,
+            reg_write_filter,
             im,
             memory_value: None,
             delay_count: 0,

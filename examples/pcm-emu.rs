@@ -1,6 +1,6 @@
 /*
  *  pcm-emu.rs - A basic emulator for the MediaTek PCM.
- *  Copyright (C) 2022  Forest Crossman <cyrozap@gmail.com>
+ *  Copyright (C) 2022-2023  Forest Crossman <cyrozap@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -97,7 +97,7 @@ fn main() {
         im[i] = *b;
     }
 
-    let mut pcm_core = mtk_pcm_emu::Core::new(start, im);
+    let mut pcm_core = mtk_pcm_emu::Core::new(start, im, None, None);
     loop {
         match pcm_core.run() {
             ExitReason::Invalid(instr) => {
