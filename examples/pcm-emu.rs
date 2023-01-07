@@ -55,13 +55,6 @@ fn handle_mem_write(_core: &mut Core, addr: u32, value: u32) -> Option<ExitReaso
     }
 }
 
-fn get_u32_from_im(im: [u8; 1 << 15], addr: u16) -> u32 {
-    ((im[(addr as usize) + 3] as u32) << 24)
-        | ((im[(addr as usize) + 2] as u32) << 16)
-        | ((im[(addr as usize) + 1] as u32) << 8)
-        | (im[(addr as usize) + 0] as u32)
-}
-
 fn main() {
     let args = Args::parse();
 
@@ -104,10 +97,9 @@ fn main() {
         match pcm_core.run() {
             ExitReason::Invalid(instr) => {
                 eprintln!(
-                    "Invalid instruction at 0x{:04x}: 0x{:08x} ({:?})",
+                    "Invalid instruction at 0x{:04x}: 0x{:08x}",
                     pcm_core.ip * 4,
-                    get_u32_from_im(pcm_core.im, pcm_core.ip * 4),
-                    instr
+                    instr.word
                 );
                 break;
             }

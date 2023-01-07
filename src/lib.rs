@@ -51,7 +51,7 @@ pub enum ExitReason {
 
 #[derive(Debug)]
 pub struct Instruction {
-    word: u32,
+    pub word: u32,
 }
 
 impl Instruction {
@@ -156,7 +156,7 @@ pub struct Core {
     regfile: [u32; 16],
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-    pub im: [u8; 1 << 15],
+    im: [u8; 1 << 15],
     mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     delay_count: u8,
