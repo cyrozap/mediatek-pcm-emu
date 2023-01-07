@@ -44,9 +44,9 @@ pub enum IoType {
 }
 
 pub enum ExitReason {
-    IOErr(IoType),
-    Halt,
-    Invalid(Instruction),
+    IOErr(u16, IoType),
+    Halt(u16),
+    Invalid(u16, Instruction),
 }
 
 #[derive(Debug)]
@@ -150,7 +150,8 @@ fn get_register_for_index(index: u8) -> Result<Register, &'static str> {
 }
 
 pub struct Core {
-    pub ip: u16,
+    curr_ip: u16,
+    working_ip: u16,
     link_register: u16,
     in_call: bool,
     regfile: [u32; 16],
@@ -176,7 +177,8 @@ impl Core {
         mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     ) -> Self {
         Self {
-            ip,
+            curr_ip: ip,
+            working_ip: ip,
             link_register: 0,
             in_call: false,
             regfile: [0; 16],
@@ -250,21 +252,24 @@ impl Core {
     pub fn mem_read(&mut self, addr: u32) -> Result<u32, ExitReason> {
         match self.mem_read_fn {
             Some(f) => f(self, addr),
-            None => Err(ExitReason::IOErr(IoType::MemRead(addr))),
+            None => Err(ExitReason::IOErr(self.curr_ip, IoType::MemRead(addr))),
         }
     }
 
     pub fn mem_write(&mut self, addr: u32, value: u32) -> Option<ExitReason> {
         match self.mem_write_fn {
             Some(f) => f(self, addr, value),
-            None => Some(ExitReason::IOErr(IoType::MemWrite(addr, value))),
+            None => Some(ExitReason::IOErr(
+                self.curr_ip,
+                IoType::MemWrite(addr, value),
+            )),
         }
     }
 
     fn fetch_im_word(&mut self) -> u32 {
-        let addr = (self.ip as usize) * 4;
+        let addr = (self.working_ip as usize) * 4;
         let word = u32::from_le_bytes(self.im[addr..addr + 4].try_into().unwrap());
-        self.ip += 1;
+        self.working_ip += 1;
         word
     }
 
@@ -275,14 +280,14 @@ impl Core {
     fn exec_add_sub_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rd_val = match instr.get_inv() {
@@ -311,7 +316,7 @@ impl Core {
     fn exec_add_sub_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rx_val = self.reg_read(rx);
@@ -341,14 +346,14 @@ impl Core {
 
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs) as i32;
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let result = match instr.get_op3128() {
@@ -387,7 +392,7 @@ impl Core {
     fn exec_compare_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rx_val = self.reg_read(rx);
@@ -415,14 +420,14 @@ impl Core {
 
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rd_val = match instr.get_op3128() {
@@ -452,7 +457,7 @@ impl Core {
     fn exec_and_or_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rx_val = self.reg_read(rx);
@@ -485,14 +490,14 @@ impl Core {
 
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rd_val = (rs_val & inverted) | or_value;
@@ -528,7 +533,7 @@ impl Core {
     fn exec_anor_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rx = match get_register_for_index(instr.get_rx()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rx_val = self.reg_read(rx);
@@ -540,7 +545,7 @@ impl Core {
 
         let ry = match get_register_for_index(instr.get_ry()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let ry_val = self.reg_read(ry);
@@ -563,7 +568,7 @@ impl Core {
             }
             self.next_in_call = true;
             self.next_r11 = instr.get_rd() as u32;
-            self.link_register = self.ip + 1;
+            self.link_register = self.working_ip + 1;
         }
         self.next_ip = Some(((instr.get_sh() as u16) << 10) | instr.get_rxry());
         self.delay_count = 2;
@@ -573,7 +578,7 @@ impl Core {
     fn exec_jump_call_cond(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs);
@@ -600,7 +605,7 @@ impl Core {
         let word_count = instr.get_sh() as u32;
 
         if word_count < 1 {
-            return Some(ExitReason::Invalid(instr));
+            return Some(ExitReason::Invalid(self.curr_ip, instr));
         }
 
         let addr = self.fetch_im_word();
@@ -621,7 +626,7 @@ impl Core {
     fn exec_store_multi(&mut self, instr: Instruction) -> Option<ExitReason> {
         match instr.get_inv() {
             true => self.exec_store_multi_imm32(instr),
-            false => Some(ExitReason::Invalid(instr)), // TODO
+            false => Some(ExitReason::Invalid(self.curr_ip, instr)), // TODO
         }
     }
 
@@ -634,7 +639,7 @@ impl Core {
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rd_val = self.reg_read(rd);
@@ -645,14 +650,14 @@ impl Core {
     fn exec_store_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
         let rs = match get_register_for_index(instr.get_rs()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
-            Err(_) => return Some(ExitReason::Invalid(instr)),
+            Err(_) => return Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
 
         let rd_val = self.reg_read(rd);
@@ -686,16 +691,16 @@ impl Core {
     }
 
     pub fn step(&mut self) -> Option<ExitReason> {
+        self.curr_ip = self.working_ip;
         // eprintln!(
         //     "Instruction 0x{:04x} (in call: {:?}, delay_count: {:?})",
-        //     self.ip * 4,
+        //     self.curr_ip * 4,
         //     self.in_call,
         //     self.delay_count
         // );
         // for i in 0..self.regfile.len() {
         //     eprintln!("R{}: 0x{:08x}", i, self.regfile[i]);
         // }
-        let saved_ip = self.ip;
         let instr = self.fetch_instruction();
         let res = match instr.get_op3128() {
             0x0 => self.exec_add_sub(instr),
@@ -709,11 +714,10 @@ impl Core {
             0xd => self.exec_jump_call(instr),
             0xe => self.exec_store(instr),
             0xf => self.exec_return(),
-            _ => Some(ExitReason::Invalid(instr)),
+            _ => Some(ExitReason::Invalid(self.curr_ip, instr)),
         };
         match res {
             Some(reason) => {
-                self.ip = saved_ip;
                 return Some(reason);
             }
             None => (),
@@ -723,13 +727,13 @@ impl Core {
             if self.delay_count == 0 {
                 match self.next_ip {
                     Some(next_ip) => {
-                        self.ip = next_ip;
+                        self.working_ip = next_ip;
                         self.in_call = self.next_in_call;
                         if self.next_in_call {
                             self.reg_write_raw(Register::R11, self.next_r11);
                         }
                     }
-                    None => return Some(ExitReason::Halt),
+                    None => return Some(ExitReason::Halt(self.curr_ip)),
                 }
             }
         }

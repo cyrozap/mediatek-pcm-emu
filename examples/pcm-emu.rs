@@ -95,24 +95,20 @@ fn main() {
     );
     loop {
         match pcm_core.run() {
-            ExitReason::Invalid(instr) => {
+            ExitReason::Invalid(ip, instr) => {
                 eprintln!(
                     "Invalid instruction at 0x{:04x}: 0x{:08x}",
-                    pcm_core.ip * 4,
+                    ip * 4,
                     instr.word
                 );
                 break;
             }
-            ExitReason::IOErr(t) => {
-                eprintln!(
-                    "Exit at 0x{:04x} due to I/O error: {:?}",
-                    pcm_core.ip * 4,
-                    t
-                );
+            ExitReason::IOErr(ip, t) => {
+                eprintln!("Exit at 0x{:04x} due to I/O error: {:?}", ip * 4, t);
                 break;
             }
-            ExitReason::Halt => {
-                eprintln!("Halted before 0x{:04x}", pcm_core.ip * 4);
+            ExitReason::Halt(ip) => {
+                eprintln!("Halted at 0x{:04x}", ip * 4);
                 break;
             }
         };
