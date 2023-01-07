@@ -37,14 +37,14 @@ pub enum Register {
     R31,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub enum IoType {
     MemRead(u32),
     MemWrite(u32, u32),
 }
 
 pub enum ExitReason {
-    IO(IoType),
+    IOErr(IoType),
     Halt,
     Invalid(Instruction),
 }
@@ -157,12 +157,12 @@ pub struct Core {
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     pub im: [u8; 1 << 15],
-    pub memory_value: Option<u32>,
+    mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
+    mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     delay_count: u8,
     next_ip: Option<u16>,
     next_in_call: bool,
     next_r11: u32,
-    resume_at: u32,
     pub instructions_retired: u64,
 }
 
@@ -172,6 +172,8 @@ impl Core {
         im: [u8; 1 << 15],
         reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
+        mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
+        mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     ) -> Self {
         Self {
             ip,
@@ -181,12 +183,12 @@ impl Core {
             reg_read_filter,
             reg_write_filter,
             im,
-            memory_value: None,
+            mem_read_fn,
+            mem_write_fn,
             delay_count: 0,
             next_ip: None,
             next_in_call: false,
             next_r11: 0,
-            resume_at: 0,
             instructions_retired: 0,
         }
     }
@@ -246,22 +248,16 @@ impl Core {
     }
 
     pub fn mem_read(&mut self, addr: u32) -> Result<u32, ExitReason> {
-        match self.memory_value {
-            Some(v) => {
-                self.memory_value = None;
-                Ok(v)
-            }
-            None => Err(ExitReason::IO(IoType::MemRead(addr))),
+        match self.mem_read_fn {
+            Some(f) => f(self, addr),
+            None => Err(ExitReason::IOErr(IoType::MemRead(addr))),
         }
     }
 
     pub fn mem_write(&mut self, addr: u32, value: u32) -> Option<ExitReason> {
-        match self.memory_value {
-            Some(_) => {
-                self.memory_value = None;
-                None
-            }
-            None => Some(ExitReason::IO(IoType::MemWrite(addr, value))),
+        match self.mem_write_fn {
+            Some(f) => f(self, addr, value),
+            None => Some(ExitReason::IOErr(IoType::MemWrite(addr, value))),
         }
     }
 
@@ -510,7 +506,6 @@ impl Core {
         let and_imm32 = self.fetch_im_word();
         let or_imm32 = self.fetch_im_word();
 
-        // FIXME: This will loop forever if shl is set.
         let and_val = match instr.get_shl() {
             true => match self.mem_read(and_imm32) {
                 Ok(v) => v,
@@ -612,18 +607,13 @@ impl Core {
 
         for i in 0..word_count {
             let value = self.fetch_im_word();
-            if self.resume_at >= i {
-                match self.mem_write(addr + 4 * i, value) {
-                    Some(reason) => {
-                        self.resume_at = i;
-                        return Some(reason);
-                    }
-                    None => (),
+            match self.mem_write(addr + 4 * i, value) {
+                Some(reason) => {
+                    return Some(reason);
                 }
+                None => (),
             }
         }
-
-        self.resume_at = 0;
 
         None
     }

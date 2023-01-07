@@ -22,7 +22,7 @@ use std::io::{stdout, Write};
 use clap::Parser;
 
 use mtk_pcm_emu;
-use mtk_pcm_emu::{ExitReason, IoType};
+use mtk_pcm_emu::{Core, ExitReason};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -35,28 +35,23 @@ struct Args {
     binary: String,
 }
 
-fn handle_io(t: IoType) -> Result<u32, &'static str> {
-    match t {
-        IoType::MemRead(addr) => match addr {
-            // _ => Err("Reading not supported")}; // TODO
-            addr => {
-                let value = 0;
-                eprintln!("0x{:08x} => 0x{:08x}", addr, value);
-                Ok(value)
-            }
-        },
-        IoType::MemWrite(addr, value) => match addr {
-            0x11002000 => {
-                stdout().write(&[(value & 0xff) as u8]).unwrap();
-                stdout().flush().unwrap();
-                Ok(value)
-            }
-            // _ => Err("Unsupported write address"),
-            _ => {
-                eprintln!("0x{:08x} <= 0x{:08x}", addr, value);
-                Ok(value)
-            }
-        },
+fn handle_mem_read(_core: &mut Core, addr: u32) -> Result<u32, ExitReason> {
+    let value = 0;
+    eprintln!("0x{:08x} => 0x{:08x}", addr, value);
+    Ok(value)
+}
+
+fn handle_mem_write(_core: &mut Core, addr: u32, value: u32) -> Option<ExitReason> {
+    match addr {
+        0x11002000 => {
+            stdout().write(&[(value & 0xff) as u8]).unwrap();
+            stdout().flush().unwrap();
+            None
+        }
+        _ => {
+            eprintln!("0x{:08x} <= 0x{:08x}", addr, value);
+            None
+        }
     }
 }
 
@@ -97,7 +92,14 @@ fn main() {
         im[i] = *b;
     }
 
-    let mut pcm_core = mtk_pcm_emu::Core::new(start, im, None, None);
+    let mut pcm_core = mtk_pcm_emu::Core::new(
+        start,
+        im,
+        None,
+        None,
+        Some(handle_mem_read),
+        Some(handle_mem_write),
+    );
     loop {
         match pcm_core.run() {
             ExitReason::Invalid(instr) => {
@@ -109,13 +111,14 @@ fn main() {
                 );
                 break;
             }
-            ExitReason::IO(t) => match handle_io(t) {
-                Ok(v) => pcm_core.memory_value = Some(v),
-                Err(_) => {
-                    eprintln!("Exit at 0x{:04x} due to I/O: {:?}", pcm_core.ip * 4, t);
-                    break;
-                }
-            },
+            ExitReason::IOErr(t) => {
+                eprintln!(
+                    "Exit at 0x{:04x} due to I/O error: {:?}",
+                    pcm_core.ip * 4,
+                    t
+                );
+                break;
+            }
             ExitReason::Halt => {
                 eprintln!("Halted before 0x{:04x}", pcm_core.ip * 4);
                 break;
