@@ -113,5 +113,8 @@ fn main() {
             }
         };
     }
-    eprintln!("Executed {:?} instructions", pcm_core.instructions_retired);
+    eprintln!(
+        "Executed {:?} instructions",
+        pcm_core.get_instructions_retired()
+    );
 }

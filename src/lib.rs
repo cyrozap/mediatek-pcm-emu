@@ -164,7 +164,7 @@ pub struct Core {
     next_ip: Option<u16>,
     next_in_call: bool,
     next_r11: u32,
-    pub instructions_retired: u64,
+    instructions_retired: u64,
 }
 
 impl Core {
@@ -193,6 +193,10 @@ impl Core {
             next_r11: 0,
             instructions_retired: 0,
         }
+    }
+
+    pub fn get_instructions_retired(&self) -> u64 {
+        self.instructions_retired
     }
 
     fn reg_read_raw(&self, reg: Register) -> u32 {
