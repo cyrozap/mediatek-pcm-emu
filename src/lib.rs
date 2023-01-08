@@ -200,11 +200,17 @@ impl Core {
     }
 
     fn reg_read_raw(&self, reg: Register) -> u32 {
-        self.regfile[get_index_for_reg(reg)]
+        match reg {
+            Register::R31 => 0,
+            _ => self.regfile[get_index_for_reg(reg)],
+        }
     }
 
     fn reg_write_raw(&mut self, reg: Register, value: u32) {
-        self.regfile[get_index_for_reg(reg)] = value;
+        match reg {
+            Register::R31 => (),
+            _ => self.regfile[get_index_for_reg(reg)] = value,
+        }
     }
 
     fn handle_r11_read(&self) -> u32 {
@@ -224,7 +230,6 @@ impl Core {
     pub fn reg_read(&mut self, reg: Register) -> u32 {
         let regfile_value = match reg {
             Register::R11 => self.handle_r11_read(),
-            Register::R31 => 0,
             _ => self.reg_read_raw(reg),
         };
 
@@ -248,7 +253,6 @@ impl Core {
 
         match reg {
             Register::R11 => self.handle_r11_write(write_value),
-            Register::R31 => (),
             _ => self.reg_write_raw(reg, write_value),
         };
     }
