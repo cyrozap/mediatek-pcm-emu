@@ -634,7 +634,7 @@ impl Core {
     fn exec_store_multi(&mut self, instr: Instruction) -> Option<ExitReason> {
         match instr.get_inv() {
             true => self.exec_store_multi_imm32(instr),
-            false => Some(ExitReason::Invalid(self.curr_ip, instr)), // TODO
+            false => todo!(), // TODO: storei [rd], #immediate, #imm32, ...
         }
     }
 
@@ -715,7 +715,7 @@ impl Core {
             0x1 => self.exec_add_sub(instr),
             0x2..=0x7 => self.exec_compare(instr),
             0x8 => self.exec_and_or(instr),
-            // TODO: 0x9: xor operations
+            0x9 => todo!(), // TODO: xor operations
             0xa => self.exec_and_or(instr),
             0xb => self.exec_anor(instr),
             0xc => self.exec_jump_call(instr),
