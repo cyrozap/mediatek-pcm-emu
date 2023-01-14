@@ -21,7 +21,6 @@ use std::io::{stdout, Write};
 
 use clap::Parser;
 
-use mtk_pcm_emu;
 use mtk_pcm_emu::{Core, ExitReason};
 
 #[derive(Parser, Debug)]
@@ -85,7 +84,7 @@ fn main() {
         im[i] = *b;
     }
 
-    let mut pcm_core = mtk_pcm_emu::Core::new(
+    let mut pcm_core = Core::new(
         start,
         im,
         None,
