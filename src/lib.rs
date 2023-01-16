@@ -126,7 +126,7 @@ fn get_index_for_reg(reg: Register) -> usize {
     }
 }
 
-fn get_register_for_index(index: u8) -> Result<Register, &'static str> {
+pub fn get_register_for_index(index: u8) -> Result<Register, &'static str> {
     match index {
         0 => Ok(Register::R0),
         1 => Ok(Register::R1),

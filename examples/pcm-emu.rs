@@ -116,4 +116,14 @@ fn main() {
         "Executed {:?} instructions",
         pcm_core.get_instructions_retired()
     );
+    for i in (0..16).step_by(4) {
+        let mut register_strings: [String; 4] =
+            [String::new(), String::new(), String::new(), String::new()];
+        for (j, s) in register_strings.iter_mut().enumerate() {
+            let reg_idx = (i + j) as u8;
+            let reg = mtk_pcm_emu::get_register_for_index(reg_idx).unwrap();
+            *s = format!("R{}: 0x{:08x}", reg_idx, pcm_core.reg_read(reg));
+        }
+        eprintln!("{}", register_strings.join(", "));
+    }
 }
