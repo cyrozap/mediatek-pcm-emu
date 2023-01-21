@@ -502,6 +502,67 @@ impl Core {
         }
     }
 
+    fn exec_xor_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
+        // XOR instructions require the "inv" flag to be set.
+        if !instr.get_inv() {
+            return Some(ExitReason::Invalid(self.current_pc, instr));
+        }
+
+        let rs = match get_register_for_index(instr.get_rs()) {
+            Ok(r) => r,
+            Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
+        };
+
+        let rs_val = self.reg_read(rs);
+
+        let rd = match get_register_for_index(instr.get_rd()) {
+            Ok(r) => r,
+            Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
+        };
+
+        let rd_val = rs_val ^ value;
+
+        self.reg_write(rd, rd_val);
+
+        None
+    }
+
+    fn exec_xor_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
+        let imm32 = self.fetch_im_word();
+        let imm_val = match instr.get_shl() {
+            true => match self.mem_read(imm32) {
+                Ok(v) => v,
+                Err(e) => return Some(e),
+            },
+            false => imm32,
+        };
+
+        self.exec_xor_common(instr, imm_val)
+    }
+
+    fn exec_xor_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
+        let rx = match get_register_for_index(instr.get_rx()) {
+            Ok(r) => r,
+            Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
+        };
+
+        let rx_val = self.reg_read(rx);
+
+        let shifted = match instr.get_shl() {
+            true => rx_val << instr.get_sh(),
+            false => rx_val >> instr.get_sh(),
+        };
+
+        self.exec_xor_common(instr, shifted)
+    }
+
+    fn exec_xor(&mut self, instr: Instruction) -> Option<ExitReason> {
+        match instr.get_op2727() {
+            true => self.exec_xor_reg_imm32(instr),
+            false => self.exec_xor_regs(instr),
+        }
+    }
+
     fn exec_anor_common(
         &mut self,
         instr: Instruction,
@@ -734,7 +795,7 @@ impl Core {
             0x1 => self.exec_add_sub(instr),
             0x2..=0x7 => self.exec_compare(instr),
             0x8 => self.exec_and_or(instr),
-            0x9 => todo!(), // TODO: xor operations
+            0x9 => self.exec_xor(instr),
             0xa => self.exec_and_or(instr),
             0xb => self.exec_anor(instr),
             0xc => self.exec_jump_call(instr),
