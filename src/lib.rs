@@ -109,6 +109,14 @@ impl Instruction {
     fn get_rs(&self) -> u8 {
         (self.word & 0x1F) as u8
     }
+
+    fn get_imm16(&self) -> u16 {
+        let high_bit: u16 = match self.get_shl() {
+            true => 1 << 15,
+            false => 0,
+        };
+        high_bit | self.get_rxryrs()
+    }
 }
 
 fn get_index_for_reg(reg: Register) -> usize {
@@ -709,19 +717,43 @@ impl Core {
         None
     }
 
+    fn exec_store_multi_imm16_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
+        let value = instr.get_imm16() as u32;
+
+        let rd = match get_register_for_index(instr.get_rd()) {
+            Ok(r) => r,
+            Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
+        };
+
+        let rd_val = self.reg_read(rd);
+
+        match self.mem_write(rd_val, value) {
+            Some(reason) => return Some(reason),
+            None => (),
+        }
+
+        let word_count_minus_2 = instr.get_sh() as u32;
+
+        for i in 1..word_count_minus_2 + 2 {
+            let value = self.fetch_im_word();
+            match self.mem_write(rd_val + 4 * i, value) {
+                Some(reason) => return Some(reason),
+                None => (),
+            }
+        }
+
+        None
+    }
+
     fn exec_store_multi(&mut self, instr: Instruction) -> Option<ExitReason> {
         match instr.get_inv() {
             true => self.exec_store_multi_imm32(instr),
-            false => todo!(), // TODO: storei [rd], #immediate, #imm32, ...
+            false => self.exec_store_multi_imm16_imm32(instr),
         }
     }
 
     fn exec_store_imm16(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let high_bit: u32 = match instr.get_shl() {
-            true => 1 << 15,
-            false => 0,
-        };
-        let value = high_bit | instr.get_rxryrs() as u32;
+        let value = instr.get_imm16() as u32;
 
         let rd = match get_register_for_index(instr.get_rd()) {
             Ok(r) => r,
