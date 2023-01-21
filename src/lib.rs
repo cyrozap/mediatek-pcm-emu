@@ -49,6 +49,12 @@ pub enum ExitReason {
     Invalid(u16, Instruction),
 }
 
+#[derive(Debug, Clone)]
+enum ExecState {
+    Normal,
+    DelaySlot,
+}
+
 #[derive(Debug)]
 pub struct Instruction {
     pub word: u32,
@@ -154,13 +160,14 @@ pub struct Core {
     next_pc: u16,
     link_register: u16,
     in_call: bool,
-    regfile: [u32; 16],
+    regfile: [u32; 15],
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     im: [u8; 1 << 15],
     mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
-    delay_count: u8,
+    current_exec_state: ExecState,
+    next_exec_state: ExecState,
     delayed_pc: Option<u16>,
     next_in_call: bool,
     next_r11: u32,
@@ -181,17 +188,28 @@ impl Core {
             next_pc: pc,
             link_register: 0,
             in_call: false,
-            regfile: [0; 16],
+            regfile: [0; 15],
             reg_read_filter,
             reg_write_filter,
             im,
             mem_read_fn,
             mem_write_fn,
-            delay_count: 0,
+            current_exec_state: ExecState::Normal,
+            next_exec_state: ExecState::Normal,
             delayed_pc: None,
             next_in_call: false,
             next_r11: 0,
             instructions_retired: 0,
+        }
+    }
+
+    fn get_pc(&self) -> u16 {
+        match self.next_exec_state {
+            ExecState::DelaySlot => match self.delayed_pc {
+                Some(delayed_pc) => delayed_pc,
+                None => 0,
+            },
+            ExecState::Normal => self.next_pc,
         }
     }
 
@@ -201,6 +219,7 @@ impl Core {
 
     fn reg_read_raw(&self, reg: Register) -> u32 {
         match reg {
+            Register::R15 => self.get_pc() as u32,
             Register::R31 => 0,
             _ => self.regfile[get_index_for_reg(reg)],
         }
@@ -208,6 +227,7 @@ impl Core {
 
     fn reg_write_raw(&mut self, reg: Register, value: u32) {
         match reg {
+            Register::R15 => (),
             Register::R31 => (),
             _ => self.regfile[get_index_for_reg(reg)] = value,
         }
@@ -579,7 +599,7 @@ impl Core {
             self.link_register = self.next_pc + 1;
         }
         self.delayed_pc = Some(((instr.get_sh() as u16) << 10) | instr.get_rxry());
-        self.delay_count = 2;
+        self.next_exec_state = ExecState::DelaySlot;
         None
     }
 
@@ -694,17 +714,18 @@ impl Core {
         } else {
             self.delayed_pc = None;
         }
-        self.delay_count = 2;
+        self.next_exec_state = ExecState::DelaySlot;
         None
     }
 
     pub fn step(&mut self) -> Option<ExitReason> {
+        self.current_exec_state = self.next_exec_state.clone();
         self.current_pc = self.next_pc;
         // eprintln!(
-        //     "Instruction 0x{:04x} (in call: {:?}, delay_count: {:?})",
+        //     "Instruction 0x{:04x} (in call: {:?}, exec_state: {:?})",
         //     self.current_pc * 4,
         //     self.in_call,
-        //     self.delay_count
+        //     self.current_exec_state
         // );
         // for i in 0..self.regfile.len() {
         //     eprintln!("R{}: 0x{:08x}", i, self.regfile[i]);
@@ -732,20 +753,19 @@ impl Core {
         };
         self.instructions_retired += 1;
 
-        if self.delay_count > 0 {
-            self.delay_count -= 1;
-            if self.delay_count == 0 {
-                match self.delayed_pc {
-                    Some(delayed_pc) => {
-                        self.next_pc = delayed_pc;
-                        self.in_call = self.next_in_call;
-                        if self.next_in_call {
-                            self.reg_write_raw(Register::R11, self.next_r11);
-                        }
+        match self.current_exec_state {
+            ExecState::DelaySlot => match self.delayed_pc {
+                Some(delayed_pc) => {
+                    self.next_pc = delayed_pc;
+                    self.in_call = self.next_in_call;
+                    if self.next_in_call {
+                        self.reg_write_raw(Register::R11, self.next_r11);
                     }
-                    None => return Some(ExitReason::Halt(self.current_pc)),
+                    self.next_exec_state = ExecState::Normal;
                 }
-            }
+                None => return Some(ExitReason::Halt(self.next_pc)),
+            },
+            ExecState::Normal => (),
         }
 
         None
