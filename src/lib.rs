@@ -730,6 +730,8 @@ impl Core {
             }
             None => (),
         };
+        self.instructions_retired += 1;
+
         if self.delay_count > 0 {
             self.delay_count -= 1;
             if self.delay_count == 0 {
@@ -745,7 +747,7 @@ impl Core {
                 }
             }
         }
-        self.instructions_retired += 1;
+
         None
     }
 
