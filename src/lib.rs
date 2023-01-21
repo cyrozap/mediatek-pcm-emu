@@ -52,7 +52,8 @@ pub enum ExitReason {
 #[derive(Debug, Clone)]
 enum ExecState {
     Normal,
-    DelaySlot,
+    DelaySlot(u16),
+    Halt,
 }
 
 #[derive(Debug)]
@@ -168,7 +169,6 @@ pub struct Core {
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     current_exec_state: ExecState,
     next_exec_state: ExecState,
-    delayed_pc: Option<u16>,
     next_in_call: bool,
     next_r11: u32,
     instructions_retired: u64,
@@ -196,7 +196,6 @@ impl Core {
             mem_write_fn,
             current_exec_state: ExecState::Normal,
             next_exec_state: ExecState::Normal,
-            delayed_pc: None,
             next_in_call: false,
             next_r11: 0,
             instructions_retired: 0,
@@ -205,10 +204,8 @@ impl Core {
 
     fn get_pc(&self) -> u16 {
         match self.next_exec_state {
-            ExecState::DelaySlot => match self.delayed_pc {
-                Some(delayed_pc) => delayed_pc,
-                None => 0,
-            },
+            ExecState::DelaySlot(delayed_pc) => delayed_pc,
+            ExecState::Halt => 0,
             ExecState::Normal => self.next_pc,
         }
     }
@@ -598,8 +595,8 @@ impl Core {
             self.next_r11 = instr.get_rd() as u32;
             self.link_register = self.next_pc + 1;
         }
-        self.delayed_pc = Some(((instr.get_sh() as u16) << 10) | instr.get_rxry());
-        self.next_exec_state = ExecState::DelaySlot;
+        let delayed_pc = ((instr.get_sh() as u16) << 10) | instr.get_rxry();
+        self.next_exec_state = ExecState::DelaySlot(delayed_pc);
         None
     }
 
@@ -710,11 +707,12 @@ impl Core {
     fn exec_return(&mut self) -> Option<ExitReason> {
         if self.in_call {
             self.next_in_call = false;
-            self.delayed_pc = Some(self.link_register);
+            self.next_exec_state = ExecState::DelaySlot(self.link_register);
         } else {
-            self.delayed_pc = None;
+            self.next_exec_state = ExecState::Halt;
+            self.current_exec_state = ExecState::Halt;
         }
-        self.next_exec_state = ExecState::DelaySlot;
+
         None
     }
 
@@ -754,21 +752,18 @@ impl Core {
         self.instructions_retired += 1;
 
         match self.current_exec_state {
-            ExecState::DelaySlot => match self.delayed_pc {
-                Some(delayed_pc) => {
-                    self.next_pc = delayed_pc;
-                    self.in_call = self.next_in_call;
-                    if self.next_in_call {
-                        self.reg_write_raw(Register::R11, self.next_r11);
-                    }
-                    self.next_exec_state = ExecState::Normal;
+            ExecState::DelaySlot(delayed_pc) => {
+                self.next_pc = delayed_pc;
+                self.in_call = self.next_in_call;
+                if self.next_in_call {
+                    self.reg_write_raw(Register::R11, self.next_r11);
                 }
-                None => return Some(ExitReason::Halt(self.next_pc)),
-            },
-            ExecState::Normal => (),
+                self.next_exec_state = ExecState::Normal;
+                None
+            }
+            ExecState::Halt => Some(ExitReason::Halt(self.next_pc)),
+            ExecState::Normal => None,
         }
-
-        None
     }
 
     pub fn run(&mut self) -> ExitReason {
