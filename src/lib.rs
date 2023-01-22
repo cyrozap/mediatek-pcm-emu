@@ -37,6 +37,53 @@ pub enum Register {
     R31,
 }
 
+impl Register {
+    pub fn from_index(index: u8) -> Result<Register, &'static str> {
+        match index {
+            0 => Ok(Register::R0),
+            1 => Ok(Register::R1),
+            2 => Ok(Register::R2),
+            3 => Ok(Register::R3),
+            4 => Ok(Register::R4),
+            5 => Ok(Register::R5),
+            6 => Ok(Register::R6),
+            7 => Ok(Register::R7),
+            8 => Ok(Register::R8),
+            9 => Ok(Register::R9),
+            10 => Ok(Register::R10),
+            11 => Ok(Register::R11),
+            12 => Ok(Register::R12),
+            13 => Ok(Register::R13),
+            14 => Ok(Register::R14),
+            15 => Ok(Register::R15),
+            31 => Ok(Register::R31),
+            _ => Err("Invalid register index"),
+        }
+    }
+
+    fn to_usize(&self) -> usize {
+        match self {
+            Register::R0 => 0,
+            Register::R1 => 1,
+            Register::R2 => 2,
+            Register::R3 => 3,
+            Register::R4 => 4,
+            Register::R5 => 5,
+            Register::R6 => 6,
+            Register::R7 => 7,
+            Register::R8 => 8,
+            Register::R9 => 9,
+            Register::R10 => 10,
+            Register::R11 => 11,
+            Register::R12 => 12,
+            Register::R13 => 13,
+            Register::R14 => 14,
+            Register::R15 => 15,
+            Register::R31 => 31,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum IoType {
     MemRead(u32),
@@ -119,51 +166,6 @@ impl Instruction {
     }
 }
 
-fn get_index_for_reg(reg: Register) -> usize {
-    match reg {
-        Register::R0 => 0,
-        Register::R1 => 1,
-        Register::R2 => 2,
-        Register::R3 => 3,
-        Register::R4 => 4,
-        Register::R5 => 5,
-        Register::R6 => 6,
-        Register::R7 => 7,
-        Register::R8 => 8,
-        Register::R9 => 9,
-        Register::R10 => 10,
-        Register::R11 => 11,
-        Register::R12 => 12,
-        Register::R13 => 13,
-        Register::R14 => 14,
-        Register::R15 => 15,
-        Register::R31 => 31,
-    }
-}
-
-pub fn get_register_for_index(index: u8) -> Result<Register, &'static str> {
-    match index {
-        0 => Ok(Register::R0),
-        1 => Ok(Register::R1),
-        2 => Ok(Register::R2),
-        3 => Ok(Register::R3),
-        4 => Ok(Register::R4),
-        5 => Ok(Register::R5),
-        6 => Ok(Register::R6),
-        7 => Ok(Register::R7),
-        8 => Ok(Register::R8),
-        9 => Ok(Register::R9),
-        10 => Ok(Register::R10),
-        11 => Ok(Register::R11),
-        12 => Ok(Register::R12),
-        13 => Ok(Register::R13),
-        14 => Ok(Register::R14),
-        15 => Ok(Register::R15),
-        31 => Ok(Register::R31),
-        _ => Err("Invalid register index"),
-    }
-}
-
 pub struct Core {
     current_pc: u16,
     next_pc: u16,
@@ -226,7 +228,7 @@ impl Core {
         match reg {
             Register::R15 => self.get_pc() as u32,
             Register::R31 => 0,
-            _ => self.regfile[get_index_for_reg(reg)],
+            _ => self.regfile[reg.to_usize()],
         }
     }
 
@@ -234,7 +236,7 @@ impl Core {
         match reg {
             Register::R15 => (),
             Register::R31 => (),
-            _ => self.regfile[get_index_for_reg(reg)] = value,
+            _ => self.regfile[reg.to_usize()] = value,
         }
     }
 
@@ -311,14 +313,14 @@ impl Core {
     }
 
     fn exec_add_sub_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -347,7 +349,7 @@ impl Core {
     }
 
     fn exec_add_sub_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.get_rx()) {
+        let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -377,14 +379,14 @@ impl Core {
             false => -signed_val,
         };
 
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs) as i32;
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -423,7 +425,7 @@ impl Core {
     }
 
     fn exec_compare_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.get_rx()) {
+        let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -451,14 +453,14 @@ impl Core {
             false => value,
         };
 
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -488,7 +490,7 @@ impl Core {
     }
 
     fn exec_and_or_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.get_rx()) {
+        let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -516,14 +518,14 @@ impl Core {
             return Some(ExitReason::Invalid(self.current_pc, instr));
         }
 
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -549,7 +551,7 @@ impl Core {
     }
 
     fn exec_xor_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.get_rx()) {
+        let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -582,14 +584,14 @@ impl Core {
             false => and_value,
         };
 
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -625,7 +627,7 @@ impl Core {
     }
 
     fn exec_anor_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rx = match get_register_for_index(instr.get_rx()) {
+        let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -637,7 +639,7 @@ impl Core {
             false => rx_val >> instr.get_sh(),
         };
 
-        let ry = match get_register_for_index(instr.get_ry()) {
+        let ry = match Register::from_index(instr.get_ry()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -670,7 +672,7 @@ impl Core {
     }
 
     fn exec_jump_call_cond(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -720,7 +722,7 @@ impl Core {
     fn exec_store_multi_imm16_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
         let value = instr.get_imm16() as u32;
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -755,7 +757,7 @@ impl Core {
     fn exec_store_imm16(&mut self, instr: Instruction) -> Option<ExitReason> {
         let value = instr.get_imm16() as u32;
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
@@ -766,14 +768,14 @@ impl Core {
     }
 
     fn exec_store_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let rs = match get_register_for_index(instr.get_rs()) {
+        let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
         let rs_val = self.reg_read(rs);
 
-        let rd = match get_register_for_index(instr.get_rd()) {
+        let rd = match Register::from_index(instr.get_rd()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };

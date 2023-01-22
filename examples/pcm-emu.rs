@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use mtk_pcm_emu::{Core, ExitReason};
+use mtk_pcm_emu::{Core, ExitReason, Register};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -129,7 +129,7 @@ fn main() {
             [String::new(), String::new(), String::new(), String::new()];
         for (j, s) in register_strings.iter_mut().enumerate() {
             let reg_idx = (i + j) as u8;
-            let reg = mtk_pcm_emu::get_register_for_index(reg_idx).unwrap();
+            let reg = Register::from_index(reg_idx).unwrap();
             *s = format!("R{}: 0x{:08x}", reg_idx, pcm_core.reg_read(reg));
         }
         eprintln!("{}", register_strings.join(", "));
