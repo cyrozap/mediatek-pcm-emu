@@ -86,13 +86,14 @@ fn main() {
     }
 
     let mut pcm_core = Core::new(
-        start,
         im,
         None,
         None,
         Some(handle_mem_read),
         Some(handle_mem_write),
     );
+
+    pcm_core.goto(start);
 
     let start = Instant::now();
     let reason = pcm_core.run();

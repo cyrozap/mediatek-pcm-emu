@@ -186,7 +186,6 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        pc: u16,
         im: [u8; 1 << 15],
         reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
@@ -194,8 +193,8 @@ impl Core {
         mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     ) -> Self {
         Self {
-            current_pc: pc,
-            next_pc: pc,
+            current_pc: 0,
+            next_pc: 0,
             link_register: 0,
             in_call: false,
             regfile: [0; 15],
@@ -809,6 +808,12 @@ impl Core {
         }
 
         None
+    }
+
+    pub fn goto(&mut self, pc: u16) {
+        self.in_call = false;
+        self.next_exec_state = ExecState::Normal;
+        self.next_pc = pc;
     }
 
     pub fn step(&mut self) -> Option<ExitReason> {
