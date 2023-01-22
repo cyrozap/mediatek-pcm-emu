@@ -92,26 +92,21 @@ fn main() {
         Some(handle_mem_read),
         Some(handle_mem_write),
     );
-    loop {
-        match pcm_core.run() {
-            ExitReason::Invalid(ip, instr) => {
-                eprintln!(
-                    "Invalid instruction at 0x{:04x}: 0x{:08x}",
-                    ip * 4,
-                    instr.word
-                );
-                break;
-            }
-            ExitReason::IOErr(ip, t) => {
-                eprintln!("Exit at 0x{:04x} due to I/O error: {:?}", ip * 4, t);
-                break;
-            }
-            ExitReason::Halt(ip) => {
-                eprintln!("Halted at 0x{:04x}", ip * 4);
-                break;
-            }
-        };
-    }
+    match pcm_core.run() {
+        ExitReason::Invalid(ip, instr) => {
+            eprintln!(
+                "Invalid instruction at 0x{:04x}: 0x{:08x}",
+                ip * 4,
+                instr.word
+            );
+        }
+        ExitReason::IOErr(ip, t) => {
+            eprintln!("Exit at 0x{:04x} due to I/O error: {:?}", ip * 4, t);
+        }
+        ExitReason::Halt(ip) => {
+            eprintln!("Halted at 0x{:04x}", ip * 4);
+        }
+    };
     eprintln!(
         "Executed {:?} instructions",
         pcm_core.get_instructions_retired()
