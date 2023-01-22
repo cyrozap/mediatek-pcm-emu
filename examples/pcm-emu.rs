@@ -18,6 +18,7 @@
 
 use std::fs;
 use std::io::{stdout, Write};
+use std::time::Instant;
 
 use clap::Parser;
 
@@ -92,7 +93,12 @@ fn main() {
         Some(handle_mem_read),
         Some(handle_mem_write),
     );
-    match pcm_core.run() {
+
+    let start = Instant::now();
+    let reason = pcm_core.run();
+    let elapsed = start.elapsed();
+
+    match reason {
         ExitReason::Invalid(ip, instr) => {
             eprintln!(
                 "Invalid instruction at 0x{:04x}: 0x{:08x}",
@@ -107,10 +113,17 @@ fn main() {
             eprintln!("Halted at 0x{:04x}", ip * 4);
         }
     };
+
+    let instructions_retired = pcm_core.get_instructions_retired();
+    let ips = (instructions_retired as u128) * 1_000_000_000 / elapsed.as_nanos();
     eprintln!(
-        "Executed {:?} instructions",
-        pcm_core.get_instructions_retired()
+        "Executed {:?} instructions in {}.{:06} seconds ({} instructions per second)",
+        instructions_retired,
+        elapsed.as_secs(),
+        elapsed.subsec_micros(),
+        ips,
     );
+
     for i in (0..16).step_by(4) {
         let mut register_strings: [String; 4] =
             [String::new(), String::new(), String::new(), String::new()];
