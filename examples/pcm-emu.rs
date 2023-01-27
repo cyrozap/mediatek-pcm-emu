@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use mtk_pcm_emu::{Core, ExitReason, Register};
+use mtk_pcm_emu::{Core, ExitReason, Register, IM_SIZE};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -77,7 +77,7 @@ fn main() {
         }
     };
 
-    let mut im: [u8; 1 << 15] = [0; 1 << 15];
+    let mut im: [u8; IM_SIZE] = [0; IM_SIZE];
     for (i, b) in binary.iter().enumerate() {
         if i >= im.len() {
             break;

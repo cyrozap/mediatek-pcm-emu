@@ -16,6 +16,8 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+pub const IM_SIZE: usize = 1 << 15;
+
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
     R0,
@@ -174,7 +176,7 @@ pub struct Core {
     regfile: [u32; 15],
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-    im: [u8; 1 << 15],
+    im: [u8; IM_SIZE],
     mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     current_exec_state: ExecState,
@@ -186,7 +188,7 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        im: [u8; 1 << 15],
+        im: [u8; IM_SIZE],
         reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
