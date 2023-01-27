@@ -44,7 +44,7 @@ fn handle_mem_read(_core: &mut Core, addr: u32) -> Result<u32, ExitReason> {
 fn handle_mem_write(_core: &mut Core, addr: u32, value: u32) -> Option<ExitReason> {
     match addr {
         0x11002000 => {
-            stdout().write(&[(value & 0xff) as u8]).unwrap();
+            stdout().write_all(&[(value & 0xff) as u8]).unwrap();
             stdout().flush().unwrap();
             None
         }
