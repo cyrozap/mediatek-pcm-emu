@@ -58,7 +58,7 @@ fn handle_mem_write(_core: &mut Core, addr: u32, value: u32) -> Option<ExitReaso
 fn main() {
     let args = Args::parse();
 
-    let start = match u16::from_str_radix((&args.start).trim_start_matches("0x"), 16) {
+    let start = match u16::from_str_radix(args.start.trim_start_matches("0x"), 16) {
         Ok(v) => v / 4,
         Err(error) => {
             eprintln!(
