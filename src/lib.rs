@@ -16,7 +16,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub const IM_SIZE: usize = 1 << 15;
+pub const IM_SIZE: usize = 1 << 12;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
