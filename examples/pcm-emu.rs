@@ -77,12 +77,9 @@ fn main() {
         }
     };
 
-    let mut im: [u8; IM_SIZE] = [0; IM_SIZE];
-    for (i, b) in binary.iter().enumerate() {
-        if i >= im.len() {
-            break;
-        }
-        im[i] = *b;
+    let mut im: [u32; IM_SIZE] = [0; IM_SIZE];
+    for (i, chunk) in binary.chunks_exact(4).enumerate() {
+        im[i] = u32::from_le_bytes(chunk.try_into().unwrap());
     }
 
     let mut pcm_core = Core::new(

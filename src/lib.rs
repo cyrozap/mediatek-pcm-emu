@@ -16,7 +16,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub const IM_SIZE: usize = 1 << 12;
+pub const IM_SIZE: usize = 1 << 10;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
@@ -176,7 +176,7 @@ pub struct Core {
     regfile: [u32; 15],
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-    im: [u8; IM_SIZE],
+    im: [u32; IM_SIZE],
     mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     current_exec_state: ExecState,
@@ -188,7 +188,7 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        im: [u8; IM_SIZE],
+        im: [u32; IM_SIZE],
         reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
@@ -303,8 +303,7 @@ impl Core {
     }
 
     fn fetch_im_word(&mut self) -> u32 {
-        let addr = (self.next_pc as usize) * 4;
-        let word = u32::from_le_bytes(self.im[addr..addr + 4].try_into().unwrap());
+        let word = self.im[self.next_pc as usize];
         self.next_pc += 1;
         word
     }
