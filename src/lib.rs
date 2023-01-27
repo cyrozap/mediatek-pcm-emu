@@ -61,7 +61,7 @@ impl Register {
         }
     }
 
-    fn to_usize(&self) -> usize {
+    fn to_usize(self) -> usize {
         match self {
             Register::R0 => 0,
             Register::R1 => 1,
