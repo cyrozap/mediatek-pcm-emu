@@ -707,11 +707,8 @@ impl Core {
 
         for i in 0..word_count {
             let value = self.fetch_im_word();
-            match self.mem_write(addr + 4 * i, value) {
-                Some(reason) => {
-                    return Some(reason);
-                }
-                None => (),
+            if let Some(reason) = self.mem_write(addr + 4 * i, value) {
+                return Some(reason);
             }
         }
 
@@ -728,18 +725,16 @@ impl Core {
 
         let rd_val = self.reg_read(rd);
 
-        match self.mem_write(rd_val, value) {
-            Some(reason) => return Some(reason),
-            None => (),
+        if let Some(reason) = self.mem_write(rd_val, value) {
+            return Some(reason);
         }
 
         let word_count_minus_2 = instr.get_sh() as u32;
 
         for i in 1..word_count_minus_2 + 2 {
             let value = self.fetch_im_word();
-            match self.mem_write(rd_val + 4 * i, value) {
-                Some(reason) => return Some(reason),
-                None => (),
+            if let Some(reason) = self.mem_write(rd_val + 4 * i, value) {
+                return Some(reason);
             }
         }
 
@@ -829,7 +824,7 @@ impl Core {
         //     eprintln!("R{}: 0x{:08x}", i, self.regfile[i]);
         // }
         let instr = self.fetch_instruction();
-        let res = match instr.get_op3128() {
+        if let Some(reason) = match instr.get_op3128() {
             0x0 => self.exec_add_sub(instr),
             0x1 => self.exec_add_sub(instr),
             0x2..=0x7 => self.exec_compare(instr),
@@ -842,13 +837,9 @@ impl Core {
             0xe => self.exec_store(instr),
             0xf => self.exec_return(),
             _ => Some(ExitReason::Invalid(self.current_pc, instr)),
-        };
-        match res {
-            Some(reason) => {
-                return Some(reason);
-            }
-            None => (),
-        };
+        } {
+            return Some(reason);
+        }
         self.instructions_retired += 1;
 
         match self.current_exec_state {
@@ -868,9 +859,8 @@ impl Core {
 
     pub fn run(&mut self) -> ExitReason {
         loop {
-            match self.step() {
-                Some(reason) => return reason,
-                None => (),
+            if let Some(reason) = self.step() {
+                return reason;
             }
         }
     }
