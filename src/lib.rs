@@ -225,7 +225,7 @@ impl Core {
 
     fn reg_read_raw(&self, reg: Register) -> u32 {
         match reg {
-            Register::R15 => self.get_pc() as u32,
+            Register::R15 => self.get_pc().into(),
             Register::R31 => 0,
             _ => self.regfile[reg.to_usize()],
         }
@@ -662,7 +662,7 @@ impl Core {
                 panic!("Tried executing a call within a call");
             }
             self.next_in_call = true;
-            self.next_r11 = instr.get_rd() as u32;
+            self.next_r11 = instr.get_rd().into();
             self.link_register = self.next_pc + 1;
         }
         let delayed_pc = ((instr.get_sh() as u16) << 10) | instr.get_rxry();
