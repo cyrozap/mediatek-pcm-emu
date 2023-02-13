@@ -101,8 +101,86 @@ pub enum ExitReason {
 #[derive(Debug, Clone)]
 enum ExecState {
     Normal,
-    DelaySlot(u16),
+    DelaySlot(u16, CallState),
     Halt,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CallState {
+    NC,
+    C1,
+    C2,
+}
+
+impl CallState {
+    fn prev(&self) -> Self {
+        match self {
+            Self::C2 => Self::C1,
+            _ => Self::NC,
+        }
+    }
+
+    fn next(&self) -> Self {
+        match self {
+            Self::NC => Self::C1,
+            _ => Self::C2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CallInfo {
+    link_register: u16,
+    r11: u32,
+}
+
+impl CallInfo {
+    fn new() -> Self {
+        Self {
+            link_register: 0,
+            r11: 0,
+        }
+    }
+}
+
+struct CallBuffer {
+    queue: [CallInfo; 2],
+    size: usize,
+    ptr: usize,
+}
+
+impl CallBuffer {
+    fn new() -> Self {
+        Self {
+            queue: [CallInfo::new(); 2],
+            size: 0,
+            ptr: 0,
+        }
+    }
+
+    fn push(&mut self, info: CallInfo) {
+        self.queue[self.ptr] = info;
+
+        self.ptr = self.ptr.wrapping_add(1);
+        if self.ptr >= self.queue.len() {
+            self.ptr = 0;
+        }
+
+        if self.size < self.queue.len() {
+            self.size += 1;
+        }
+    }
+
+    fn pop(&mut self) -> CallInfo {
+        self.size = self.size.saturating_sub(1);
+
+        self.ptr = self.ptr.wrapping_sub(1);
+        if self.ptr >= self.queue.len() {
+            self.ptr = self.queue.len() - 1;
+        }
+
+        self.queue[self.ptr]
+    }
 }
 
 #[derive(Debug)]
@@ -171,8 +249,8 @@ impl Instruction {
 pub struct Core {
     current_pc: u16,
     next_pc: u16,
-    link_register: u16,
-    in_call: bool,
+    call_buffer: CallBuffer,
+    call_state: CallState,
     regfile: [u32; 15],
     reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
@@ -181,8 +259,7 @@ pub struct Core {
     mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
     current_exec_state: ExecState,
     next_exec_state: ExecState,
-    next_in_call: bool,
-    next_r11: u32,
+    next_r11: Option<u32>,
     instructions_retired: u64,
 }
 
@@ -197,8 +274,8 @@ impl Core {
         Self {
             current_pc: 0,
             next_pc: 0,
-            link_register: 0,
-            in_call: false,
+            call_buffer: CallBuffer::new(),
+            call_state: CallState::NC,
             regfile: [0; 15],
             reg_read_filter,
             reg_write_filter,
@@ -207,15 +284,14 @@ impl Core {
             mem_write_fn,
             current_exec_state: ExecState::Normal,
             next_exec_state: ExecState::Normal,
-            next_in_call: false,
-            next_r11: 0,
+            next_r11: None,
             instructions_retired: 0,
         }
     }
 
     fn get_pc(&self) -> u16 {
         match self.next_exec_state {
-            ExecState::DelaySlot(delayed_pc) => delayed_pc,
+            ExecState::DelaySlot(delayed_pc, _) => delayed_pc,
             ExecState::Halt => 0,
             ExecState::Normal => self.next_pc,
         }
@@ -242,16 +318,16 @@ impl Core {
     }
 
     fn handle_r11_read(&self) -> u32 {
-        match self.in_call {
-            true => self.regfile[self.reg_read_raw(Register::R11) as usize],
-            false => self.reg_read_raw(Register::R11),
+        match self.call_state {
+            CallState::NC => self.reg_read_raw(Register::R11),
+            _ => self.regfile[self.reg_read_raw(Register::R11) as usize],
         }
     }
 
     fn handle_r11_write(&mut self, value: u32) {
-        match self.in_call {
-            true => self.regfile[self.reg_read_raw(Register::R11) as usize] = value,
-            false => self.reg_write_raw(Register::R11, value),
+        match self.call_state {
+            CallState::NC => self.reg_write_raw(Register::R11, value),
+            _ => self.regfile[self.reg_read_raw(Register::R11) as usize] = value,
         }
     }
 
@@ -657,17 +733,22 @@ impl Core {
     }
 
     fn exec_jump_call_uncond(&mut self, instr: Instruction) -> Option<ExitReason> {
-        if instr.get_op3128() == 0xc {
-            if self.in_call {
-                // TODO: Confirm how this works on real hardware.
-                panic!("Tried executing a call within a call");
+        let delayed_call_state = match instr.get_op3128() {
+            0xc => {
+                let r11 = instr.get_rd().into();
+                self.call_buffer.push(CallInfo {
+                    link_register: self.next_pc + 1,
+                    r11,
+                });
+                self.next_r11 = Some(r11);
+
+                self.call_state.next()
             }
-            self.next_in_call = true;
-            self.next_r11 = instr.get_rd().into();
-            self.link_register = self.next_pc + 1;
-        }
+            _ => self.call_state,
+        };
+
         let delayed_pc = ((instr.get_sh() as u16) << 10) | instr.get_rxry();
-        self.next_exec_state = ExecState::DelaySlot(delayed_pc);
+        self.next_exec_state = ExecState::DelaySlot(delayed_pc, delayed_call_state);
         None
     }
 
@@ -795,19 +876,30 @@ impl Core {
     }
 
     fn exec_return(&mut self) -> Option<ExitReason> {
-        if self.in_call {
-            self.next_in_call = false;
-            self.next_exec_state = ExecState::DelaySlot(self.link_register);
-        } else {
-            self.next_exec_state = ExecState::Halt;
-            self.current_exec_state = ExecState::Halt;
+        match self.call_state {
+            CallState::NC => {
+                self.next_exec_state = ExecState::Halt;
+                self.current_exec_state = ExecState::Halt;
+            }
+            _ => {
+                let call_info = self.call_buffer.pop();
+                self.next_exec_state =
+                    ExecState::DelaySlot(call_info.link_register, self.call_state.prev());
+                self.next_r11 = Some(call_info.r11);
+            }
         }
+
+        // eprintln!(
+        //     "Returned from {:?} at 0x{:04x}",
+        //     self.call_state,
+        //     self.current_pc * 4
+        // );
 
         None
     }
 
     pub fn goto(&mut self, pc: u16) {
-        self.in_call = false;
+        self.call_state = CallState::NC;
         self.next_exec_state = ExecState::Normal;
         self.next_pc = pc;
     }
@@ -844,11 +936,12 @@ impl Core {
         self.instructions_retired += 1;
 
         match self.current_exec_state {
-            ExecState::DelaySlot(delayed_pc) => {
+            ExecState::DelaySlot(delayed_pc, delayed_call_state) => {
                 self.next_pc = delayed_pc;
-                self.in_call = self.next_in_call;
-                if self.next_in_call {
-                    self.reg_write_raw(Register::R11, self.next_r11);
+                self.call_state = delayed_call_state;
+                if let Some(r11) = self.next_r11 {
+                    self.reg_write_raw(Register::R11, r11);
+                    self.next_r11 = None;
                 }
                 self.next_exec_state = ExecState::Normal;
                 None
