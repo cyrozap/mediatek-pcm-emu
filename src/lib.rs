@@ -183,7 +183,62 @@ impl CallBuffer {
     }
 }
 
-#[derive(Debug)]
+enum Comparison {
+    GT,
+    GE,
+    LT,
+    LE,
+    EQ,
+    NE,
+}
+
+enum AndOr {
+    And,
+    Or,
+}
+
+enum JumpCall {
+    Call,
+    Jump,
+}
+
+enum Operation {
+    AddSub,
+    Compare(Comparison),
+    AndOr(AndOr),
+    Xor,
+    Anor,
+    JumpCall(JumpCall),
+    Store,
+    Return,
+    Invalid,
+}
+
+impl Operation {
+    fn from_instruction(instr: Instruction) -> Self {
+        match instr.get_op3128() {
+            0x0 => Self::AddSub,
+            0x1 => Self::AddSub,
+            0x2 => Self::Compare(Comparison::GT),
+            0x3 => Self::Compare(Comparison::GE),
+            0x4 => Self::Compare(Comparison::LT),
+            0x5 => Self::Compare(Comparison::LE),
+            0x6 => Self::Compare(Comparison::EQ),
+            0x7 => Self::Compare(Comparison::NE),
+            0x8 => Self::AndOr(AndOr::And),
+            0x9 => Self::Xor,
+            0xa => Self::AndOr(AndOr::Or),
+            0xb => Self::Anor,
+            0xc => Self::JumpCall(JumpCall::Call),
+            0xd => Self::JumpCall(JumpCall::Jump),
+            0xe => Self::Store,
+            0xf => Self::Return,
+            _ => Self::Invalid,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Instruction {
     pub word: u32,
 }
@@ -447,7 +502,12 @@ impl Core {
         }
     }
 
-    fn exec_compare_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
+    fn exec_compare_common(
+        &mut self,
+        op: Comparison,
+        instr: Instruction,
+        value: u32,
+    ) -> Option<ExitReason> {
         let signed_val = value as i32;
 
         let negated = match instr.get_inv() {
@@ -467,14 +527,13 @@ impl Core {
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
-        let result = match instr.get_op3128() {
-            0x2 => rs_val > negated,
-            0x3 => rs_val >= negated,
-            0x4 => rs_val < negated,
-            0x5 => rs_val <= negated,
-            0x6 => rs_val == negated,
-            0x7 => rs_val != negated,
-            _ => panic!("We should never get here."),
+        let result = match op {
+            Comparison::GT => rs_val > negated,
+            Comparison::GE => rs_val >= negated,
+            Comparison::LT => rs_val < negated,
+            Comparison::LE => rs_val <= negated,
+            Comparison::EQ => rs_val == negated,
+            Comparison::NE => rs_val != negated,
         };
 
         let rd_val = match result {
@@ -487,7 +546,7 @@ impl Core {
         None
     }
 
-    fn exec_compare_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_compare_reg_imm32(&mut self, op: Comparison, instr: Instruction) -> Option<ExitReason> {
         let imm32 = self.fetch_im_word();
         let imm_val = match instr.get_shl() {
             true => match self.mem_read(imm32) {
@@ -497,10 +556,10 @@ impl Core {
             false => imm32,
         };
 
-        self.exec_compare_common(instr, imm_val)
+        self.exec_compare_common(op, instr, imm_val)
     }
 
-    fn exec_compare_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_compare_regs(&mut self, op: Comparison, instr: Instruction) -> Option<ExitReason> {
         let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
@@ -513,17 +572,22 @@ impl Core {
             false => rx_val >> instr.get_sh(),
         };
 
-        self.exec_compare_common(instr, shifted)
+        self.exec_compare_common(op, instr, shifted)
     }
 
-    fn exec_compare(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_compare(&mut self, op: Comparison, instr: Instruction) -> Option<ExitReason> {
         match instr.get_op2727() {
-            true => self.exec_compare_reg_imm32(instr),
-            false => self.exec_compare_regs(instr),
+            true => self.exec_compare_reg_imm32(op, instr),
+            false => self.exec_compare_regs(op, instr),
         }
     }
 
-    fn exec_and_or_common(&mut self, instr: Instruction, value: u32) -> Option<ExitReason> {
+    fn exec_and_or_common(
+        &mut self,
+        op: AndOr,
+        instr: Instruction,
+        value: u32,
+    ) -> Option<ExitReason> {
         let inverted = match instr.get_inv() {
             true => !value,
             false => value,
@@ -541,10 +605,9 @@ impl Core {
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
         };
 
-        let rd_val = match instr.get_op3128() {
-            0x8 => rs_val & inverted,
-            0xa => rs_val | inverted,
-            _ => panic!("We should never get here."),
+        let rd_val = match op {
+            AndOr::And => rs_val & inverted,
+            AndOr::Or => rs_val | inverted,
         };
 
         self.reg_write(rd, rd_val);
@@ -552,7 +615,7 @@ impl Core {
         None
     }
 
-    fn exec_and_or_reg_imm32(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_and_or_reg_imm32(&mut self, op: AndOr, instr: Instruction) -> Option<ExitReason> {
         let imm32 = self.fetch_im_word();
         let imm_val = match instr.get_shl() {
             true => match self.mem_read(imm32) {
@@ -562,10 +625,10 @@ impl Core {
             false => imm32,
         };
 
-        self.exec_and_or_common(instr, imm_val)
+        self.exec_and_or_common(op, instr, imm_val)
     }
 
-    fn exec_and_or_regs(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_and_or_regs(&mut self, op: AndOr, instr: Instruction) -> Option<ExitReason> {
         let rx = match Register::from_index(instr.get_rx()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
@@ -578,13 +641,13 @@ impl Core {
             false => rx_val >> instr.get_sh(),
         };
 
-        self.exec_and_or_common(instr, shifted)
+        self.exec_and_or_common(op, instr, shifted)
     }
 
-    fn exec_and_or(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_and_or(&mut self, op: AndOr, instr: Instruction) -> Option<ExitReason> {
         match instr.get_op2727() {
-            true => self.exec_and_or_reg_imm32(instr),
-            false => self.exec_and_or_regs(instr),
+            true => self.exec_and_or_reg_imm32(op, instr),
+            false => self.exec_and_or_regs(op, instr),
         }
     }
 
@@ -732,9 +795,9 @@ impl Core {
         }
     }
 
-    fn exec_jump_call_uncond(&mut self, instr: Instruction) -> Option<ExitReason> {
-        let delayed_call_state = match instr.get_op3128() {
-            0xc => {
+    fn exec_jump_call_uncond(&mut self, op: JumpCall, instr: Instruction) -> Option<ExitReason> {
+        let delayed_call_state = match op {
+            JumpCall::Call => {
                 let r11 = instr.get_rd().into();
                 self.call_buffer.push(CallInfo {
                     link_register: self.next_pc + 1,
@@ -744,7 +807,7 @@ impl Core {
 
                 self.call_state.next()
             }
-            _ => self.call_state,
+            JumpCall::Jump => self.call_state,
         };
 
         let delayed_pc = ((instr.get_sh() as u16) << 10) | instr.get_rxry();
@@ -752,7 +815,7 @@ impl Core {
         None
     }
 
-    fn exec_jump_call_cond(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_jump_call_cond(&mut self, op: JumpCall, instr: Instruction) -> Option<ExitReason> {
         let rs = match Register::from_index(instr.get_rs()) {
             Ok(r) => r,
             Err(_) => return Some(ExitReason::Invalid(self.current_pc, instr)),
@@ -766,15 +829,15 @@ impl Core {
         };
 
         match do_jump {
-            true => self.exec_jump_call_uncond(instr),
+            true => self.exec_jump_call_uncond(op, instr),
             false => None,
         }
     }
 
-    fn exec_jump_call(&mut self, instr: Instruction) -> Option<ExitReason> {
+    fn exec_jump_call(&mut self, op: JumpCall, instr: Instruction) -> Option<ExitReason> {
         match instr.get_op2727() {
-            true => self.exec_jump_call_cond(instr),
-            false => self.exec_jump_call_uncond(instr),
+            true => self.exec_jump_call_cond(op, instr),
+            false => self.exec_jump_call_uncond(op, instr),
         }
     }
 
@@ -917,19 +980,16 @@ impl Core {
         //     eprintln!("R{}: 0x{:08x}", i, self.regfile[i]);
         // }
         let instr = self.fetch_instruction();
-        if let Some(reason) = match instr.get_op3128() {
-            0x0 => self.exec_add_sub(instr),
-            0x1 => self.exec_add_sub(instr),
-            0x2..=0x7 => self.exec_compare(instr),
-            0x8 => self.exec_and_or(instr),
-            0x9 => self.exec_xor(instr),
-            0xa => self.exec_and_or(instr),
-            0xb => self.exec_anor(instr),
-            0xc => self.exec_jump_call(instr),
-            0xd => self.exec_jump_call(instr),
-            0xe => self.exec_store(instr),
-            0xf => self.exec_return(),
-            _ => Some(ExitReason::Invalid(self.current_pc, instr)),
+        if let Some(reason) = match Operation::from_instruction(instr) {
+            Operation::AddSub => self.exec_add_sub(instr),
+            Operation::Compare(op) => self.exec_compare(op, instr),
+            Operation::AndOr(op) => self.exec_and_or(op, instr),
+            Operation::Xor => self.exec_xor(instr),
+            Operation::Anor => self.exec_anor(instr),
+            Operation::JumpCall(op) => self.exec_jump_call(op, instr),
+            Operation::Store => self.exec_store(instr),
+            Operation::Return => self.exec_return(),
+            Operation::Invalid => Some(ExitReason::Invalid(self.current_pc, instr)),
         } {
             return Some(reason);
         }
