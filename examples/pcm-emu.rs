@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use mtk_pcm_emu::{Core, ExitReason, IM_SIZE, Register};
+use mtk_pcm_emu::{Core, ExitReason, Hooks, IM_SIZE, Register};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -35,22 +35,27 @@ struct Args {
     binary: String,
 }
 
-fn handle_mem_read(_core: &mut Core, addr: u32) -> Result<u32, ExitReason> {
-    let value = 0;
-    eprintln!("0x{:08x} => 0x{:08x}", addr, value);
-    Ok(value)
-}
+#[derive(Default)]
+struct EmuHooks;
 
-fn handle_mem_write(_core: &mut Core, addr: u32, value: u32) -> Option<ExitReason> {
-    match addr {
-        0x11002000 => {
-            stdout().write_all(&[(value & 0xff) as u8]).unwrap();
-            stdout().flush().unwrap();
-            None
-        }
-        _ => {
-            eprintln!("0x{:08x} <= 0x{:08x}", addr, value);
-            None
+impl Hooks for EmuHooks {
+    fn mem_read(&mut self, _core: &mut Core<Self>, addr: u32) -> Result<u32, ExitReason> {
+        let value = 0;
+        eprintln!("0x{:08x} => 0x{:08x}", addr, value);
+        Ok(value)
+    }
+
+    fn mem_write(&mut self, _core: &mut Core<Self>, addr: u32, value: u32) -> Option<ExitReason> {
+        match addr {
+            0x11002000 => {
+                stdout().write_all(&[(value & 0xff) as u8]).unwrap();
+                stdout().flush().unwrap();
+                None
+            }
+            _ => {
+                eprintln!("0x{:08x} <= 0x{:08x}", addr, value);
+                None
+            }
         }
     }
 }
@@ -78,7 +83,7 @@ fn main() {
     };
     let mut reader = BufReader::with_capacity(IM_SIZE * 4, file);
 
-    let mut pcm_core = Core::new(None, None, Some(handle_mem_read), Some(handle_mem_write));
+    let mut pcm_core = Core::new(EmuHooks);
 
     if let Err(error) = pcm_core.load_im(&mut reader) {
         eprintln!("Error reading file {:?}: {:?}", &args.binary, error);

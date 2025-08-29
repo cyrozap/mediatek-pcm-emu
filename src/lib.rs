@@ -94,6 +94,103 @@ pub enum IoType {
     MemWrite(u32, u32),
 }
 
+/// A trait for hooking into the emulator core's memory and register accesses.
+///
+/// This trait provides a way to implement custom behavior for memory and
+/// register operations, allowing for the emulation of peripherals or other
+/// system-specific hardware.
+///
+/// # Usage
+///
+/// To use hooks, create a struct, implement this trait, and derive [`Default`].
+/// Then, pass an instance of your struct to [`Core::new`].
+///
+/// ```no_run
+/// use mtk_pcm_emu::{Core, ExitReason, Hooks};
+///
+/// #[derive(Default)]
+/// struct MyHooks;
+///
+/// impl Hooks for MyHooks {
+///     fn mem_read(&mut self, _core: &mut Core<Self>, addr: u32) -> Result<u32, ExitReason> {
+///         println!("Reading from 0x{:08x}", addr);
+///         Ok(0) // Return some value
+///     }
+///
+///     fn mem_write(&mut self, _core: &mut Core<Self>, addr: u32, value: u32) -> Option<ExitReason> {
+///         println!("Writing 0x{:08x} to 0x{:08x}", value, addr);
+///         None // No error
+///     }
+/// }
+///
+/// fn main() {
+///     let hooks = MyHooks;
+///     let mut pcm_core = Core::new(hooks);
+///     // ...
+/// }
+/// ```
+///
+/// All methods have default implementations. The default register hooks do
+/// nothing. The default memory hooks return an I/O error, simulating an open
+/// bus.
+///
+/// The [`Core`] is generic over any type that implements [`Hooks`]. This allows
+/// the compiler to specialize the [`Core`] for a specific set of hooks at
+/// compile time, enabling optimizations like inlining the hook functions. The
+/// [`Default`] trait is required to work around Rust's borrowing rules when
+/// calling hook methods.
+pub trait Hooks {
+    /// A filter for register reads.
+    ///
+    /// This function is called whenever a register is read. It can return a
+    /// new value to substitute for the read value, or `None` to use the
+    /// original value.
+    fn reg_read_filter(&mut self, _core: &mut Core<Self>, _reg: Register, _val: u32) -> Option<u32>
+    where
+        Self: Sized + Default,
+    {
+        None
+    }
+
+    /// A filter for register writes.
+    ///
+    /// This function is called whenever a register is written to. It can
+    /// return a new value to substitute for the value being written, or `None`
+    /// to use the original value.
+    fn reg_write_filter(&mut self, _core: &mut Core<Self>, _reg: Register, _val: u32) -> Option<u32>
+    where
+        Self: Sized + Default,
+    {
+        None
+    }
+
+    /// A handler for memory reads.
+    ///
+    /// This function is called whenever the core attempts to read from memory.
+    /// It should return the value at the given address, or an `ExitReason` if
+    /// an error occurred.
+    fn mem_read(&mut self, core: &mut Core<Self>, addr: u32) -> Result<u32, ExitReason>
+    where
+        Self: Sized + Default,
+    {
+        Err(ExitReason::IOErr(core.current_pc, IoType::MemRead(addr)))
+    }
+
+    /// A handler for memory writes.
+    ///
+    /// This function is called whenever the core attempts to write to memory.
+    /// It can return an `ExitReason` if an error occurred.
+    fn mem_write(&mut self, core: &mut Core<Self>, addr: u32, value: u32) -> Option<ExitReason>
+    where
+        Self: Sized + Default,
+    {
+        Some(ExitReason::IOErr(
+            core.current_pc,
+            IoType::MemWrite(addr, value),
+        ))
+    }
+}
+
 pub enum ExitReason {
     IOErr(u16, IoType),
     Halt(u16),
@@ -303,41 +400,30 @@ impl Instruction {
     }
 }
 
-pub struct Core {
+pub struct Core<H: Hooks + Default> {
     current_pc: u16,
     next_pc: u16,
     call_buffer: CallBuffer,
     call_state: CallState,
     regfile: [u32; 15],
-    reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-    reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
     im: [u32; IM_SIZE],
-    mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
-    mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
+    hooks: H,
     current_exec_state: ExecState,
     next_exec_state: ExecState,
     next_r11: Option<u32>,
     instructions_retired: u64,
 }
 
-impl Core {
-    pub fn new(
-        reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-        reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
-        mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
-        mem_write_fn: Option<fn(&mut Core, u32, u32) -> Option<ExitReason>>,
-    ) -> Self {
+impl<H: Hooks + Default> Core<H> {
+    pub fn new(hooks: H) -> Self {
         Self {
             current_pc: 0,
             next_pc: 0,
             call_buffer: CallBuffer::new(),
             call_state: CallState::NC,
             regfile: [0; 15],
-            reg_read_filter,
-            reg_write_filter,
             im: [0; IM_SIZE],
-            mem_read_fn,
-            mem_write_fn,
+            hooks,
             current_exec_state: ExecState::Normal,
             next_exec_state: ExecState::Normal,
             next_r11: None,
@@ -405,21 +491,31 @@ impl Core {
             _ => self.reg_read_raw(reg),
         };
 
-        match self.reg_read_filter {
-            Some(reg_read_filter) => match reg_read_filter(self, reg, regfile_value) {
-                Some(filtered_value) => filtered_value,
-                None => regfile_value,
-            },
+        // The hook handler needs a mutable reference to the core, but the
+        // hooks are also owned by the core. To satisfy the borrow checker, we
+        // temporarily move the hooks out of the core, call the hook, and
+        // then move them back.
+        let mut hooks = std::mem::take(&mut self.hooks);
+        let filter_result = hooks.reg_read_filter(self, reg, regfile_value);
+        self.hooks = hooks;
+
+        match filter_result {
+            Some(filtered_value) => filtered_value,
             None => regfile_value,
         }
     }
 
     pub fn reg_write(&mut self, reg: Register, value: u32) {
-        let write_value = match self.reg_write_filter {
-            Some(reg_write_filter) => match reg_write_filter(self, reg, value) {
-                Some(filtered_value) => filtered_value,
-                None => value,
-            },
+        // The hook handler needs a mutable reference to the core, but the
+        // hooks are also owned by the core. To satisfy the borrow checker, we
+        // temporarily move the hooks out of the core, call the hook, and
+        // then move them back.
+        let mut hooks = std::mem::take(&mut self.hooks);
+        let filter_result = hooks.reg_write_filter(self, reg, value);
+        self.hooks = hooks;
+
+        let write_value = match filter_result {
+            Some(filtered_value) => filtered_value,
             None => value,
         };
 
@@ -430,20 +526,25 @@ impl Core {
     }
 
     pub fn mem_read(&mut self, addr: u32) -> Result<u32, ExitReason> {
-        match self.mem_read_fn {
-            Some(f) => f(self, addr),
-            None => Err(ExitReason::IOErr(self.current_pc, IoType::MemRead(addr))),
-        }
+        // The hook handler needs a mutable reference to the core, but the
+        // hooks are also owned by the core. To satisfy the borrow checker, we
+        // temporarily move the hooks out of the core, call the hook, and
+        // then move them back.
+        let mut hooks = std::mem::take(&mut self.hooks);
+        let result = hooks.mem_read(self, addr);
+        self.hooks = hooks;
+        result
     }
 
     pub fn mem_write(&mut self, addr: u32, value: u32) -> Option<ExitReason> {
-        match self.mem_write_fn {
-            Some(f) => f(self, addr, value),
-            None => Some(ExitReason::IOErr(
-                self.current_pc,
-                IoType::MemWrite(addr, value),
-            )),
-        }
+        // The hook handler needs a mutable reference to the core, but the
+        // hooks are also owned by the core. To satisfy the borrow checker, we
+        // temporarily move the hooks out of the core, call the hook, and
+        // then move them back.
+        let mut hooks = std::mem::take(&mut self.hooks);
+        let result = hooks.mem_write(self, addr, value);
+        self.hooks = hooks;
+        result
     }
 
     fn fetch_im_word(&mut self) -> u32 {
