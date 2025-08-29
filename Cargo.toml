@@ -3,7 +3,7 @@ name = "mtk-pcm-emu"
 version = "0.1.0"
 authors = ["cyrozap"]
 license = "GPL-3.0-or-later"
-edition = "2021"
+edition = "2024"
 
 [dev-dependencies]
 clap = { version = "4.0.32", features = ["derive"] }

@@ -17,12 +17,12 @@
  */
 
 use std::fs;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::Instant;
 
 use clap::Parser;
 
-use mtk_pcm_emu::{Core, ExitReason, Register, IM_SIZE};
+use mtk_pcm_emu::{Core, ExitReason, IM_SIZE, Register};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
