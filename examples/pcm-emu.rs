@@ -17,7 +17,7 @@
  */
 
 use std::fs;
-use std::io::{Write, stdout};
+use std::io::{BufReader, Write, stdout};
 use std::time::Instant;
 
 use clap::Parser;
@@ -69,26 +69,21 @@ fn main() {
         }
     };
 
-    let binary = match fs::read(&args.binary) {
+    let file = match fs::File::open(&args.binary) {
         Ok(f) => f,
         Err(error) => {
             eprintln!("Error opening file {:?}: {:?}", &args.binary, error);
             return;
         }
     };
+    let mut reader = BufReader::with_capacity(IM_SIZE * 4, file);
 
-    let mut im: [u32; IM_SIZE] = [0; IM_SIZE];
-    for (i, chunk) in binary.chunks_exact(4).enumerate() {
-        im[i] = u32::from_le_bytes(chunk.try_into().unwrap());
+    let mut pcm_core = Core::new(None, None, Some(handle_mem_read), Some(handle_mem_write));
+
+    if let Err(error) = pcm_core.load_im(&mut reader) {
+        eprintln!("Error reading file {:?}: {:?}", &args.binary, error);
+        return;
     }
-
-    let mut pcm_core = Core::new(
-        im,
-        None,
-        None,
-        Some(handle_mem_read),
-        Some(handle_mem_write),
-    );
 
     pcm_core.goto(start);
 

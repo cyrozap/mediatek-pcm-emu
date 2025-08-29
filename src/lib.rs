@@ -1,6 +1,6 @@
 /*
  *  src/lib.rs - Emulator core for MediaTek PCM.
- *  Copyright (C) 2022-2023  Forest Crossman <cyrozap@gmail.com>
+ *  Copyright (C) 2022-2023, 2025  Forest Crossman <cyrozap@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,6 +15,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+use std::io::Read;
 
 pub const IM_SIZE: usize = 1 << 10;
 
@@ -320,7 +322,6 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        im: [u32; IM_SIZE],
         reg_read_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         reg_write_filter: Option<fn(&mut Core, Register, u32) -> Option<u32>>,
         mem_read_fn: Option<fn(&mut Core, u32) -> Result<u32, ExitReason>>,
@@ -334,7 +335,7 @@ impl Core {
             regfile: [0; 15],
             reg_read_filter,
             reg_write_filter,
-            im,
+            im: [0; IM_SIZE],
             mem_read_fn,
             mem_write_fn,
             current_exec_state: ExecState::Normal,
@@ -342,6 +343,18 @@ impl Core {
             next_r11: None,
             instructions_retired: 0,
         }
+    }
+
+    pub fn load_im<R: Read>(&mut self, mut reader: R) -> std::io::Result<()> {
+        let mut buf = [0u8; 4];
+        for word in self.im.iter_mut() {
+            match reader.read_exact(&mut buf) {
+                Ok(()) => *word = u32::from_le_bytes(buf),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
     }
 
     fn get_pc(&self) -> u16 {
