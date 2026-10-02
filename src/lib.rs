@@ -1,6 +1,6 @@
 /*
  *  src/lib.rs - Emulator core for MediaTek PCM.
- *  Copyright (C) 2022-2023, 2025  Forest Crossman <cyrozap@gmail.com>
+ *  Copyright (C) 2022-2023, 2025-2026  Forest Crossman <cyrozap@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -197,7 +197,7 @@ pub enum ExitReason {
     Invalid(u16, Instruction),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum ExecState {
     Normal,
     DelaySlot(u16, CallState),
@@ -408,7 +408,6 @@ pub struct Core<H: Hooks + Default> {
     regfile: [u32; 15],
     im: [u32; IM_SIZE],
     hooks: H,
-    current_exec_state: ExecState,
     next_exec_state: ExecState,
     next_r11: Option<u32>,
     instructions_retired: u64,
@@ -424,7 +423,6 @@ impl<H: Hooks + Default> Core<H> {
             regfile: [0; 15],
             im: [0; IM_SIZE],
             hooks,
-            current_exec_state: ExecState::Normal,
             next_exec_state: ExecState::Normal,
             next_r11: None,
             instructions_retired: 0,
@@ -1056,7 +1054,6 @@ impl<H: Hooks + Default> Core<H> {
         match self.call_state {
             CallState::NC => {
                 self.next_exec_state = ExecState::Halt;
-                self.current_exec_state = ExecState::Halt;
             }
             _ => {
                 let call_info = self.call_buffer.pop();
@@ -1082,13 +1079,13 @@ impl<H: Hooks + Default> Core<H> {
     }
 
     pub fn step(&mut self) -> Option<ExitReason> {
-        self.current_exec_state = self.next_exec_state.clone();
+        let current_exec_state = self.next_exec_state;
         self.current_pc = self.next_pc;
         // eprintln!(
         //     "Instruction 0x{:04x} (in call: {:?}, exec_state: {:?})",
         //     self.current_pc * 4,
         //     self.in_call,
-        //     self.current_exec_state
+        //     current_exec_state
         // );
         // for i in 0..self.regfile.len() {
         //     eprintln!("R{}: 0x{:08x}", i, self.regfile[i]);
@@ -1109,7 +1106,7 @@ impl<H: Hooks + Default> Core<H> {
         }
         self.instructions_retired += 1;
 
-        match self.current_exec_state {
+        match current_exec_state {
             ExecState::DelaySlot(delayed_pc, delayed_call_state) => {
                 self.next_pc = delayed_pc;
                 self.call_state = delayed_call_state;
